@@ -250,6 +250,7 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 	// Trying unsafe payload should be done before safe attributes
 	// It allows the unsafe head can move forward while the long-range consolidation is in progress.
 	if eq.unsafePayloads.Len() > 0 {
+		eq.log.Info("ZXL: current unsafePayloads len", eq.unsafePayloads.Len())
 		if err := eq.tryNextUnsafePayload(ctx); err != io.EOF {
 			return err
 		}
@@ -468,7 +469,9 @@ func (eq *EngineQueue) checkForkchoiceUpdatedStatus(status eth.ExecutePayloadSta
 
 func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 	first := eq.unsafePayloads.Peek()
+	eq.log.Info("ZXL first payload", first.BlockNumber)
 
+	//比实际已经追到的块更低
 	if uint64(first.BlockNumber) <= eq.safeHead.Number {
 		eq.log.Info("skipping unsafe payload, since it is older than safe head", "safe", eq.safeHead.ID(), "unsafe", first.ID(), "payload", first.ID())
 		eq.unsafePayloads.Pop()
@@ -560,6 +563,7 @@ func (eq *EngineQueue) tryNextSafeAttributes(ctx context.Context) error {
 			eq.safeHead, eq.safeHead.ParentID(), eq.safeAttributes.parent))
 
 	}
+	//这个判断是什么意思？
 	if eq.safeHead.Number < eq.unsafeHead.Number {
 		return eq.consolidateNextSafeAttributes(ctx)
 	} else if eq.safeHead.Number == eq.unsafeHead.Number {
