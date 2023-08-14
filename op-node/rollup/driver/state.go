@@ -282,6 +282,7 @@ func (s *Driver) eventLoop() {
 			planSequencerAction() // schedule the next sequencer action to keep the sequencing looping
 		case <-altSyncTicker.C:
 			// Check if there is a gap in the current unsafe payload queue.
+			s.log.Info("Step into altSyncTicker channel")
 			ctx, cancel := context.WithTimeout(ctx, time.Second*2)
 			err := s.checkForGapInUnsafeQueue(ctx)
 			cancel()
@@ -542,8 +543,8 @@ type hashAndErrorChannel struct {
 // WARNING: This is only an outgoing signal, the blocks are not guaranteed to be retrieved.
 // Results are received through OnUnsafeL2Payload.
 func (s *Driver) checkForGapInUnsafeQueue(ctx context.Context) error {
-	start := s.derivation.UnsafeL2Head()
-	end := s.derivation.UnsafeL2SyncTarget()
+	start := s.derivation.UnsafeL2Head()     //一直为0，直到23：31更新为最高
+	end := s.derivation.UnsafeL2SyncTarget() //看起来一直为0
 	// Check if we have missing blocks between the start and end. Request them if we do.
 	if end == (eth.L2BlockRef{}) {
 		s.log.Debug("requesting sync with open-end range", "start", start)
@@ -552,5 +553,6 @@ func (s *Driver) checkForGapInUnsafeQueue(ctx context.Context) error {
 		s.log.Debug("requesting missing unsafe L2 block range", "start", start, "end", end, "size", end.Number-start.Number)
 		return s.altSync.RequestL2Range(ctx, start, end)
 	}
+	s.log.Debug("requesting sync with no range", "start", start, "end", end)
 	return nil
 }

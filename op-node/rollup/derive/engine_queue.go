@@ -469,7 +469,7 @@ func (eq *EngineQueue) checkForkchoiceUpdatedStatus(status eth.ExecutePayloadSta
 
 func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 	first := eq.unsafePayloads.Peek()
-	eq.log.Info("ZXL first payload", first.BlockNumber)
+	eq.log.Info("ZXL first payload", "payloadNumber", first.BlockNumber)
 
 	//比实际已经追到的块更低
 	if uint64(first.BlockNumber) <= eq.safeHead.Number {
@@ -818,10 +818,12 @@ func (eq *EngineQueue) UnsafeL2SyncTarget() eth.L2BlockRef {
 	if first := eq.unsafePayloads.Peek(); first != nil {
 		ref, err := PayloadToBlockRef(first, &eq.cfg.Genesis)
 		if err != nil {
+			log.Error("ZXL: PayloadToBlockRef err", "error", err)
 			return eth.L2BlockRef{}
 		}
 		return ref
 	} else {
+		log.Error("ZXL: unsafePayloads empty")
 		return eth.L2BlockRef{}
 	}
 }

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/sources/caching"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type EngineClientConfig struct {
@@ -82,7 +83,7 @@ func (s *EngineClient) ForkchoiceUpdate(ctx context.Context, fc *eth.ForkchoiceS
 // This returns a PayloadStatusV1 which encodes any validation/processing error,
 // and this type of error is kept separate from the returned `error` used for RPC errors, like timeouts.
 func (s *EngineClient) NewPayload(ctx context.Context, payload *eth.ExecutionPayload) (*eth.PayloadStatusV1, error) {
-	e := s.log.New("block_hash", payload.BlockHash)
+	e := s.log.New("block_hash", payload.BlockHash, "block_number", payload.BlockNumber)
 	e.Trace("sending payload for execution")
 
 	execCtx, cancel := context.WithTimeout(ctx, time.Second*5)
