@@ -203,6 +203,7 @@ func (dp *DerivationPipeline) Step(ctx context.Context) error {
 
 	// Now step the engine queue. It will pull earlier data as needed.
 	if err := dp.eng.Step(ctx); err == io.EOF {
+		log.Info("zxl: EOF")
 		// If every stage has returned io.EOF, try to advance the L1 Origin
 		return dp.traversal.AdvanceL1Block(ctx)
 	} else if err == EngineP2PSyncing {

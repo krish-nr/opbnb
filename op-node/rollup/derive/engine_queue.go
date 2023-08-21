@@ -66,6 +66,9 @@ type EngineControl interface {
 // Max memory used for buffering unsafe payloads
 const maxUnsafePayloadsMemory = 500 * 1024 * 1024
 
+// Max UnsafePayloadsGap
+const maxUnsafePayloadsGap = 50000
+
 // finalityLookback defines the amount of L1<>L2 relations to track for finalization purposes, one per L1 block.
 //
 // When L1 finalizes blocks, it finalizes finalityLookback blocks behind the L1 head.
@@ -168,7 +171,7 @@ func (eq *EngineQueue) SystemConfig() eth.SystemConfig {
 }
 
 func (eq *EngineQueue) SetUnsafeHead(head eth.L2BlockRef) {
-	eq.unsafeHead = head
+	eq.unsafeHead = head //没被调用过
 	eq.metrics.RecordL2Ref("l2_unsafe", head)
 }
 
@@ -242,6 +245,11 @@ func (eq *EngineQueue) isEngineSyncing() bool {
 	return eq.unsafeHead.Hash != eq.engineSyncTarget.Hash
 }
 
+// Determine if the engine isSwitchedToRealtime
+func (eq *EngineQueue) isSwitchedToRealtime() bool {
+	return eq.engineSyncTarget.Number-eq.unsafeHead.Number < maxUnsafePayloadsGap
+}
+
 // TODO ZXL
 func (eq *EngineQueue) Step(ctx context.Context) error {
 	if eq.needForkchoiceUpdate {
@@ -250,13 +258,12 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 	// Trying unsafe payload should be done before safe attributes
 	// It allows the unsafe head can move forward while the long-range consolidation is in progress.
 	if eq.unsafePayloads.Len() > 0 {
-		eq.log.Info("ZXL: current unsafePayloads len", eq.unsafePayloads.Len())
 		if err := eq.tryNextUnsafePayload(ctx); err != io.EOF {
 			return err
 		}
 		// EOF error means we can't process the next unsafe payload. Then we should process next safe attributes.
 	}
-	if eq.isEngineSyncing() {
+	if eq.isEngineSyncing() && !eq.isSwitchedToRealtime() { //这里在23:31:16状态变化带来了区块连续增长
 		// Make pipeline first focus to sync unsafe blocks to engineSyncTarget
 		return EngineP2PSyncing
 	}
@@ -533,10 +540,10 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 	eq.engineSyncTarget = ref
 	eq.metrics.RecordL2Ref("l2_engineSyncTarget", ref)
 	// unsafeHead should be updated only if the payload status is VALID
-	if fcRes.PayloadStatus.Status == eth.ExecutionValid {
-		eq.unsafeHead = ref
-		eq.metrics.RecordL2Ref("l2_unsafe", ref)
-	}
+	//if fcRes.PayloadStatus.Status == eth.ExecutionValid {
+	eq.unsafeHead = ref //这里触发的条件看一下，应该是forkchoice,导致l2_engineSyncTarget和l2_unsafe不同步变化.
+	eq.metrics.RecordL2Ref("l2_unsafe", ref)
+	//}
 	eq.unsafePayloads.Pop()
 	eq.log.Trace("Executed unsafe payload", "hash", ref.Hash, "number", ref.Number, "timestamp", ref.Time, "l1Origin", ref.L1Origin)
 	eq.logSyncProgress("unsafe payload from sequencer")
@@ -571,7 +578,7 @@ func (eq *EngineQueue) tryNextSafeAttributes(ctx context.Context) error {
 	} else {
 		// For some reason the unsafe head is behind the safe head. Log it, and correct it.
 		eq.log.Error("invalid sync state, unsafe head is behind safe head", "unsafe", eq.unsafeHead, "safe", eq.safeHead)
-		eq.unsafeHead = eq.safeHead
+		eq.unsafeHead = eq.safeHead //P2P完成前进不来
 		eq.engineSyncTarget = eq.safeHead
 		eq.metrics.RecordL2Ref("l2_unsafe", eq.unsafeHead)
 		eq.metrics.RecordL2Ref("l2_engineSyncTarget", eq.unsafeHead)
@@ -667,7 +674,7 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 }
 
 func (eq *EngineQueue) StartPayload(ctx context.Context, parent eth.L2BlockRef, attrs *eth.PayloadAttributes, updateSafe bool) (errType BlockInsertionErrType, err error) {
-	if eq.isEngineSyncing() {
+	if eq.isEngineSyncing() && !eq.isSwitchedToRealtime() {
 		return BlockInsertTemporaryErr, fmt.Errorf("engine is in progess of p2p sync")
 	}
 	if eq.buildingID != (eth.PayloadID{}) {
@@ -710,7 +717,7 @@ func (eq *EngineQueue) ConfirmPayload(ctx context.Context) (out *eth.ExecutionPa
 		return nil, BlockInsertPayloadErr, NewResetError(fmt.Errorf("failed to decode L2 block ref from payload: %w", err))
 	}
 
-	eq.unsafeHead = ref
+	eq.unsafeHead = ref //只在forceNextSafeAttr时调用
 	eq.engineSyncTarget = ref
 	eq.metrics.RecordL2Ref("l2_unsafe", ref)
 	eq.metrics.RecordL2Ref("l2_engineSyncTarget", ref)
@@ -793,7 +800,7 @@ func (eq *EngineQueue) Reset(ctx context.Context, _ eth.L1BlockRef, _ eth.System
 		return NewTemporaryError(fmt.Errorf("failed to fetch L1 config of L2 block %s: %w", pipelineL2.ID(), err))
 	}
 	eq.log.Debug("Reset engine queue", "safeHead", safe, "unsafe", unsafe, "safe_timestamp", safe.Time, "unsafe_timestamp", unsafe.Time, "l1Origin", l1Origin)
-	eq.unsafeHead = unsafe
+	eq.unsafeHead = unsafe //只在初始化做了一次
 	eq.engineSyncTarget = unsafe
 	eq.safeHead = safe
 	eq.safeAttributes = nil

@@ -79,8 +79,8 @@ func (bq *BatchQueue) NextBatch(ctx context.Context, safeL2Head eth.L2BlockRef) 
 			// originBehind is false.
 			bq.l1Blocks = bq.l1Blocks[:0]
 		}
-		bq.log.Info("Advancing bq origin", "origin", bq.origin, "originBehind", originBehind)
-	}
+		bq.log.Info("Advancing bq origin", "origin", bq.origin, "originBehind", originBehind) //这里多次进入
+	} //从这里到下一个bq.AddBatch时间就一分钟了，看起来是
 
 	// Load more data into the batch queue
 	outOfData := false
@@ -152,7 +152,7 @@ func (bq *BatchQueue) deriveNextBatch(ctx context.Context, outOfData bool, l2Saf
 		return nil, NewCriticalError(errors.New("cannot derive next batch, no origin was prepared"))
 	}
 	epoch := bq.l1Blocks[0]
-	bq.log.Trace("Deriving the next batch", "epoch", epoch, "l2SafeHead", l2SafeHead, "outOfData", outOfData)
+	bq.log.Trace("Deriving the next batch", "epoch", epoch, "l2SafeHead", l2SafeHead, "outOfData", outOfData) //这里直到outOfData=false就会走到后面的Found next batch
 
 	// Note: epoch origin can now be one block ahead of the L2 Safe Head
 	// This is in the case where we auto generate all batches in an epoch & advance the epoch
