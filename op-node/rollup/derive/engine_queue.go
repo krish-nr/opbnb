@@ -66,6 +66,9 @@ type EngineControl interface {
 // Max memory used for buffering unsafe payloads
 const maxUnsafePayloadsMemory = 500 * 1024 * 1024
 
+// trigger gap for P2P syncing
+const blockGapLimitForP2PSwitch = 20000
+
 // finalityLookback defines the amount of L1<>L2 relations to track for finalization purposes, one per L1 block.
 //
 // When L1 finalizes blocks, it finalizes finalityLookback blocks behind the L1 head.
@@ -242,6 +245,20 @@ func (eq *EngineQueue) isEngineSyncing() bool {
 	return eq.unsafeHead.Hash != eq.engineSyncTarget.Hash
 }
 
+// Determine if the engine needs to sync with P2P way
+func (eq *EngineQueue) needP2PSyncing(ctx context.Context) bool {
+
+	currentUnsafeHead, err := eq.engine.L2BlockRefByLabel(ctx, eth.Unsafe)
+	if err != nil {
+		return true
+	}
+	syncGap := eq.engineSyncTarget.Number - currentUnsafeHead.Number
+	if syncGap < blockGapLimitForP2PSwitch {
+		return false
+	}
+	return true
+}
+
 // TODO ZXL
 func (eq *EngineQueue) Step(ctx context.Context) error {
 	if eq.needForkchoiceUpdate {
@@ -250,13 +267,12 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 	// Trying unsafe payload should be done before safe attributes
 	// It allows the unsafe head can move forward while the long-range consolidation is in progress.
 	if eq.unsafePayloads.Len() > 0 {
-		eq.log.Info("ZXL: current unsafePayloads len", eq.unsafePayloads.Len())
 		if err := eq.tryNextUnsafePayload(ctx); err != io.EOF {
 			return err
 		}
 		// EOF error means we can't process the next unsafe payload. Then we should process next safe attributes.
 	}
-	if eq.isEngineSyncing() {
+	if eq.isEngineSyncing() && eq.needP2PSyncing(ctx) {
 		// Make pipeline first focus to sync unsafe blocks to engineSyncTarget
 		return EngineP2PSyncing
 	}
@@ -534,6 +550,7 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 	eq.metrics.RecordL2Ref("l2_engineSyncTarget", ref)
 	// unsafeHead should be updated only if the payload status is VALID
 	if fcRes.PayloadStatus.Status == eth.ExecutionValid {
+		log.Info("ZXL: unsafe head updated")
 		eq.unsafeHead = ref
 		eq.metrics.RecordL2Ref("l2_unsafe", ref)
 	}
@@ -710,6 +727,7 @@ func (eq *EngineQueue) ConfirmPayload(ctx context.Context) (out *eth.ExecutionPa
 		return nil, BlockInsertPayloadErr, NewResetError(fmt.Errorf("failed to decode L2 block ref from payload: %w", err))
 	}
 
+	log.Info("ZXL2: unsafeHead updated")
 	eq.unsafeHead = ref
 	eq.engineSyncTarget = ref
 	eq.metrics.RecordL2Ref("l2_unsafe", ref)
