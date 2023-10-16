@@ -58,6 +58,8 @@ func (aq *AttributesQueue) NextAttributes(ctx context.Context, l2SafeHead eth.L2
 		aq.batch = batch
 	}
 
+	log.Info("Get batch and create attributes")
+
 	// Actually generate the next attributes
 	if attrs, err := aq.createNextAttributes(ctx, aq.batch, l2SafeHead); err != nil {
 		return nil, err

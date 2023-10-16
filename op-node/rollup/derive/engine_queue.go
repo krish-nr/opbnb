@@ -258,6 +258,9 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 		// Make pipeline first focus to sync unsafe blocks to engineSyncTarget
 		return EngineP2PSyncing
 	}
+
+	log.Debug("isEngineSyncing false")
+
 	if eq.safeAttributes != nil {
 		return eq.tryNextSafeAttributes(ctx)
 	}
