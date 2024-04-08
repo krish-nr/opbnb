@@ -261,5 +261,6 @@ func NewSyncConfig(ctx *cli.Context) *sync.Config {
 	return &sync.Config{
 		EngineSync:         ctx.Bool(flags.L2EngineSyncEnabled.Name),
 		SkipSyncStartCheck: ctx.Bool(flags.SkipSyncStartCheck.Name),
+		EngineSyncGap:      ctx.Int(flags.EngineSyncGap.Name),
 	}
 }
