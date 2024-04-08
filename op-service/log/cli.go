@@ -62,6 +62,17 @@ func (cfg CLIConfig) Check() error {
 }
 
 func NewLogger(cfg CLIConfig) log.Logger {
+
+	/*
+		logFilePath := "/Users/zhaoxueliang/opbnb_project_pr/mainnet_dir/op_node_0218.log"
+
+		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			panic(err)
+		}
+
+	*/
+
 	handler := log.StreamHandler(os.Stdout, Format(cfg.Format, cfg.Color))
 	handler = log.SyncHandler(handler)
 	handler = log.LvlFilterHandler(Level(cfg.Level), handler)
