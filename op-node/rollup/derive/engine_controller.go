@@ -327,7 +327,7 @@ func (e *EngineController) TryUpdateEngine(ctx context.Context) error {
 
 func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *eth.ExecutionPayloadEnvelope, ref eth.L2BlockRef) error {
 	// Check if there is a finalized head once when doing EL sync. If so, transition to CL sync
-	if e.syncStatus == syncStatusWillStartEL {
+	if e.syncStatus == syncStatusWillStartEL { //强杀后这里已经不是这个状态了，应该已经finish了
 		b, err := e.engine.L2BlockRefByLabel(ctx, eth.Finalized)
 		isTransitionBlock := e.rollupCfg.Genesis.L2.Number != 0 && b.Hash == e.rollupCfg.Genesis.L2.Hash
 		isGapSyncNeeded := ref.Number-e.UnsafeL2Head().Number > uint64(e.elTriggerGap)
@@ -348,7 +348,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 	if err != nil {
 		return NewTemporaryError(fmt.Errorf("failed to update insert payload: %w", err))
 	}
-	if !e.checkNewPayloadStatus(status.Status) {
+	if !e.checkNewPayloadStatus(status.Status) { //此时返回syncing,判断为true
 		payload := envelope.ExecutionPayload
 		return NewTemporaryError(fmt.Errorf("cannot process unsafe payload: new - %v; parent: %v; err: %w",
 			payload.ID(), payload.ParentID(), eth.NewPayloadErr(payload, status)))
@@ -356,10 +356,11 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 
 	// Mark the new payload as valid
 	fc := eth.ForkchoiceState{
-		HeadBlockHash:      envelope.ExecutionPayload.BlockHash,
-		SafeBlockHash:      e.safeHead.Hash,
-		FinalizedBlockHash: e.finalizedHead.Hash,
+		HeadBlockHash:      envelope.ExecutionPayload.BlockHash, //3,378,299
+		SafeBlockHash:      e.safeHead.Hash,                     //这里出问题了吧，此时没有
+		FinalizedBlockHash: e.finalizedHead.Hash,                //还有这里，此时也没有
 	}
+	//ZXL: 能否借鉴在此处更新？
 	if e.syncStatus == syncStatusFinishedELButNotFinalized {
 		fc.SafeBlockHash = envelope.ExecutionPayload.BlockHash
 		fc.FinalizedBlockHash = envelope.ExecutionPayload.BlockHash
@@ -385,7 +386,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		return NewTemporaryError(fmt.Errorf("cannot prepare unsafe chain for new payload: new - %v; parent: %v; err: %w",
 			payload.ID(), payload.ParentID(), eth.ForkchoiceUpdateErr(fcRes.PayloadStatus)))
 	}
-	e.SetUnsafeHead(ref)
+	e.SetUnsafeHead(ref) //这里是否进来了？
 	e.needFCUCall = false
 
 	if e.syncStatus == syncStatusFinishedELButNotFinalized {
