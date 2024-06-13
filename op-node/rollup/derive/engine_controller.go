@@ -367,6 +367,21 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		e.SetSafeHead(ref)
 		e.SetFinalizedHead(ref)
 	}
+
+	//此处更新
+	if status.Status == eth.ExecutionUnconsistent {
+		unsafenow, _ := e.engine.L2BlockRefByLabel(ctx, eth.Unsafe)
+		//重置unsafe
+		e.SetUnsafeHead(unsafenow)
+		//强制reset
+		e.SetSafeHead(unsafenow)
+		e.SetFinalizedHead(unsafenow)
+
+		fc.HeadBlockHash = unsafenow.Hash
+		fc.SafeBlockHash = unsafenow.Hash
+		fc.FinalizedBlockHash = unsafenow.Hash
+	}
+
 	fcRes, err := e.engine.ForkchoiceUpdate(ctx, &fc, nil)
 	if err != nil {
 		var inputErr eth.InputError
