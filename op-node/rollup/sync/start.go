@@ -64,6 +64,7 @@ type FindHeadsResult struct {
 // If nothing has been marked safe yet, the safe head defaults to the finalized block.
 func currentHeads(ctx context.Context, cfg *rollup.Config, l2 L2Chain) (*FindHeadsResult, error) {
 	finalized, err := l2.L2BlockRefByLabel(ctx, eth.Finalized)
+	log.Info("ZXL: finalized", "finalized num from geth", finalized.Number)
 	if errors.Is(err, ethereum.NotFound) {
 		// default to genesis if we have not finalized anything before.
 		finalized, err = l2.L2BlockRefByHash(ctx, cfg.Genesis.L2.Hash)
