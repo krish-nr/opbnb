@@ -92,7 +92,7 @@ func (s *EngineAPIClient) ForkchoiceUpdate(ctx context.Context, fc *eth.Forkchoi
 	if err == nil {
 		tlog.Trace("Shared forkchoice-updated signal")
 		if attributes != nil { // block building is optional, we only get a payload ID if we are building a block
-			tlog.Trace("Received payload id", "payloadId", result.PayloadID)
+			tlog.Warn("Received payload id", "payloadId", result.PayloadID)
 		}
 		return &result, nil
 	} else {
@@ -118,7 +118,7 @@ func (s *EngineAPIClient) ForkchoiceUpdate(ctx context.Context, fc *eth.Forkchoi
 // and this type of error is kept separate from the returned `error` used for RPC errors, like timeouts.
 func (s *EngineAPIClient) NewPayload(ctx context.Context, payload *eth.ExecutionPayload, parentBeaconBlockRoot *common.Hash) (*eth.PayloadStatusV1, error) {
 	e := s.log.New("block_hash", payload.BlockHash)
-	e.Trace("sending payload for execution")
+	e.Debug("sending payload for execution")
 
 	execCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()

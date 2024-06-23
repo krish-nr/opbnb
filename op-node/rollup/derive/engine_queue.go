@@ -300,11 +300,12 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 	// perform a network call, then we should yield even if we did not encounter an error.
 	if err := eq.ec.TryUpdateEngine(ctx); !errors.Is(err, errNoFCUNeeded) {
 		return err
-	}
+	} //这里执行完之后geth的safe高度被重置，但safe还没有追上
 	// Trying unsafe payload should be done before safe attributes
 	// It allows the unsafe head can move forward while the long-range consolidation is in progress.
 	if eq.unsafePayloads.Len() > 0 {
 		if err := eq.tryNextUnsafePayload(ctx); err != io.EOF {
+			log.Error("ZXL unsafe err", "err", err)
 			return err
 		}
 		// EOF error means we can't process the next unsafe payload. Then we should process next safe attributes.
@@ -314,6 +315,7 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 		return EngineELSyncing
 	}
 	if eq.safeAttributes != nil {
+		log.Info("ZXL: safe processing")
 		return eq.tryNextSafeAttributes(ctx)
 	}
 	outOfData := false
@@ -513,8 +515,11 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 			eq.log.Info("skipping unsafe payload, since it does not build onto the existing unsafe chain", "safe", eq.ec.SafeL2Head().ID(), "unsafe", first.ID(), "payload", first.ID())
 			eq.unsafePayloads.Pop()
 		}
+		log.Info("ZXL: unsafe payloads too high")
 		return io.EOF // time to go to next stage if we cannot process the first unsafe payload
 	}
+
+	log.Info("ZXL: go on building unsafe")
 
 	ref, err := PayloadToBlockRef(eq.cfg, first)
 	if err != nil {
@@ -594,7 +599,7 @@ func (eq *EngineQueue) consolidateNextSafeAttributes(ctx context.Context) error 
 	if err != nil {
 		return NewResetError(fmt.Errorf("failed to decode L2 block ref from payload: %w", err))
 	}
-	eq.ec.SetPendingSafeL2Head(ref)
+	eq.ec.SetPendingSafeL2Head(ref) //这里看到每次都+1的原因正是如此
 	if eq.safeAttributes.isLastInSpan {
 		eq.ec.SetSafeHead(ref)
 		if err := eq.postProcessSafeL2(); err != nil {
