@@ -528,6 +528,8 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 		return nil
 	}
 
+	//到这里貌似只是逐块插入了
+	//对，engine-sync的触发放到外面了
 	if err := eq.ec.InsertUnsafePayload(ctx, firstEnvelope, ref); errors.Is(err, ErrTemporary) {
 		eq.log.Debug("Temporary error while inserting unsafe payload", "hash", ref.Hash, "number", ref.Number, "timestamp", ref.Time, "l1Origin", ref.L1Origin)
 		return err
@@ -622,6 +624,7 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 	lastInSpan := eq.safeAttributes.isLastInSpan
 	errType, err := eq.StartPayload(ctx, eq.ec.PendingSafeL2Head(), eq.safeAttributes, true)
 	if err == nil {
+		log.Info("zxl log into confirmpayload", "safe", eq.ec.PendingSafeL2Head().Number)
 		_, errType, err = eq.ec.ConfirmPayload(ctx, async.NoOpGossiper{}, &conductor.NoOpConductor{})
 	}
 	if err != nil {
@@ -634,6 +637,7 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 			return NewResetError(fmt.Errorf("need reset to resolve pre-state problem: %w", err))
 		case BlockInsertPayloadErr:
 			_ = eq.CancelPayload(ctx, true)
+			eq.log.Warn("zxl err caused by block", "pending safe", eq.ec.PendingSafeL2Head().Number)
 			eq.log.Warn("could not process payload derived from L1 data, dropping batch", "err", err)
 			// Count the number of deposits to see if the tx list is deposit only.
 			depositCount := 0
