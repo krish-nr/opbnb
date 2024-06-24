@@ -168,6 +168,8 @@ func (s *EngineAPIClient) GetPayload(ctx context.Context, payloadInfo eth.Payloa
 		}
 		return nil, err
 	}
+	e.Info("ZXL get payload", "number", result.ExecutionPayload.BlockNumber.String())
+
 	e.Trace("Received payload")
 	return &result, nil
 }

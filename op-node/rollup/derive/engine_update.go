@@ -173,6 +173,7 @@ func confirmPayload(
 	if status.Status != eth.ExecutionValid {
 		return nil, BlockInsertTemporaryErr, eth.NewPayloadErr(payload, status)
 	}
+	log.Info("zxl new payload success", "block", payload.BlockNumber)
 	metrics.RecordSequencerStepTime("newPayload", time.Since(start))
 
 	fc.HeadBlockHash = payload.BlockHash
@@ -197,6 +198,7 @@ func confirmPayload(
 			return nil, BlockInsertTemporaryErr, fmt.Errorf("failed to make the new L2 block canonical via forkchoice: %w", err)
 		}
 	}
+	log.Info("zxl fcu result", "fcu request block", payload.BlockNumber, "status", fcRes.PayloadStatus.Status)
 	agossip.Clear()
 	if fcRes.PayloadStatus.Status != eth.ExecutionValid {
 		return nil, BlockInsertPayloadErr, eth.ForkchoiceUpdateErr(fcRes.PayloadStatus)
