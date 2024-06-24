@@ -206,5 +206,6 @@ func confirmPayload(
 		"state_root", payload.StateRoot, "timestamp", uint64(payload.Timestamp), "parent", payload.ParentHash,
 		"prev_randao", payload.PrevRandao, "fee_recipient", payload.FeeRecipient,
 		"txs", len(payload.Transactions), "update_safe", updateSafe)
+	time.Sleep(100 * time.Millisecond)
 	return envelope, BlockInsertOK, nil
 }
