@@ -178,6 +178,7 @@ func (e *EngineController) StartPayload(ctx context.Context, parent eth.L2BlockR
 
 	id, errTyp, err := startPayload(ctx, e.engine, fc, attrs.attributes)
 	if err != nil {
+		log.Warn("zxl: error processing startPayload")
 		return errTyp, err
 	}
 
