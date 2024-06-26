@@ -272,6 +272,7 @@ func (e *EngineController) resetBuildingState() {
 // It returns true if the status is acceptable.
 func (e *EngineController) checkNewPayloadStatus(status eth.ExecutePayloadStatus) bool {
 	if e.syncMode == sync.ELSync {
+		//zxl added
 		if status == eth.ExecutionUnconsistent {
 			return true
 		}
@@ -281,6 +282,14 @@ func (e *EngineController) checkNewPayloadStatus(status eth.ExecutePayloadStatus
 		// Allow SYNCING and ACCEPTED if engine EL sync is enabled
 		return status == eth.ExecutionValid || status == eth.ExecutionSyncing || status == eth.ExecutionAccepted
 	}
+	/*
+		if e.syncMode == sync.CLSync {
+			if status == eth.ExecutionUnconsistent {
+				return true
+			}
+		}
+
+	*/
 	return status == eth.ExecutionValid
 }
 

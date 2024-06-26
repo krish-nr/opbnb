@@ -100,6 +100,7 @@ func (s *L2Client) RollupConfig() *rollup.Config {
 func (s *L2Client) L2BlockRefByLabel(ctx context.Context, label eth.BlockLabel) (eth.L2BlockRef, error) {
 	envelope, err := s.PayloadByLabel(ctx, label)
 	if err != nil {
+		log.Error("zxl step error L2BlockRefByLabel")
 		// Both geth and erigon like to serve non-standard errors for the safe and finalized heads, correct that.
 		// This happens when the chain just started and nothing is marked as safe/finalized yet.
 		if strings.Contains(err.Error(), "block not found") || strings.Contains(err.Error(), "Unknown block") {
@@ -110,6 +111,8 @@ func (s *L2Client) L2BlockRefByLabel(ctx context.Context, label eth.BlockLabel) 
 	}
 	ref, err := derive.PayloadToBlockRef(s.rollupCfg, envelope.ExecutionPayload)
 	if err != nil {
+		log.Error("zxl step error L2BlockRefByLabel 2")
+
 		return eth.L2BlockRef{}, err
 	}
 	s.l2BlockRefsCache.Add(ref.Hash, ref)
