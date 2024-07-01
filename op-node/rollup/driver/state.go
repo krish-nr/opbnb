@@ -390,6 +390,7 @@ func (s *Driver) eventLoop() {
 				s.log.Warn("failed to check for unsafe L2 blocks to sync", "err", err)
 			}
 		case envelope := <-s.unsafeL2Payloads:
+			log.Info("zxl step into unsafeL2Payloads")
 			s.snapshot("New unsafe payload")
 			// If we are doing CL sync or done with engine syncing, fallback to the unsafe payload queue & CL P2P sync.
 			if s.syncCfg.SyncMode == sync.CLSync || !s.engineController.IsEngineSyncing() {
