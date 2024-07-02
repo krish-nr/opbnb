@@ -372,17 +372,19 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 			log.Info("zxl inconsistent state", "unsafe", currentL2Info.Unsafe.Number, "safe", currentL2Info.Safe.Number, "final", currentL2Info.Finalized.Number)
 			e.SetUnsafeHead(currentL2Info.Unsafe)
 			if currentL2Info.Safe.Number > currentL2Info.Unsafe.Number {
+				log.Info("currentL2Info.Safe.Number > currentL2Info.Unsafe.Number", "set safe after", currentL2Info.Unsafe.Number, "set safe before", e.safeHead.Number)
 				e.SetSafeHead(currentL2Info.Unsafe)
 			}
 			if currentL2Info.Finalized.Number > currentL2Info.Unsafe.Number {
+				log.Info("currentL2Info.Finalized.Number > currentL2Info.Unsafe.Number", "set Finalized after", currentL2Info.Unsafe.Number, "set Finalized before", e.safeHead.Number)
 				e.SetFinalizedHead(currentL2Info.Unsafe)
 			}
 		}
 
 		fcs := eth.ForkchoiceState{
-			HeadBlockHash:      e.unsafeHead.Hash,    //3,378,299
-			SafeBlockHash:      e.safeHead.Hash,      //这里出问题了吧，此时没有
-			FinalizedBlockHash: e.finalizedHead.Hash, //还有这里，此时也没有
+			HeadBlockHash:      e.unsafeHead.Hash,
+			SafeBlockHash:      e.safeHead.Hash,
+			FinalizedBlockHash: e.finalizedHead.Hash,
 		}
 
 		fcRes, err := e.engine.ForkchoiceUpdate(ctx, &fcs, nil)
