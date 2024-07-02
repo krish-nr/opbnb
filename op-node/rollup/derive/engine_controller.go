@@ -361,10 +361,44 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 	if err != nil {
 		return NewTemporaryError(fmt.Errorf("failed to update insert payload: %w", err))
 	}
+	//增加unconsistent逻辑
+	//1. fcu，更新unsafe状态，currentHeads方法
+	//2. reset,推进safe块高(或者直接set好)
+	//3. tryupdateengine (更新geth safe块高)
+	//4.
+	if status.Status == eth.ExecutionUnconsistent {
+		currentL2Info, err := e.getCurrentL2Info(ctx)
+		if err == nil {
+			log.Info("zxl inconsistent state", "unsafe", currentL2Info.Unsafe.Number, "safe", currentL2Info.Safe.Number, "final", currentL2Info.Finalized.Number)
+			e.SetUnsafeHead(currentL2Info.Unsafe)
+			if currentL2Info.Safe.Number > currentL2Info.Unsafe.Number {
+				e.SetSafeHead(currentL2Info.Unsafe)
+			}
+			if currentL2Info.Finalized.Number > currentL2Info.Unsafe.Number {
+				e.SetFinalizedHead(currentL2Info.Unsafe)
+			}
+		}
+
+		fcs := eth.ForkchoiceState{
+			HeadBlockHash:      e.unsafeHead.Hash,    //3,378,299
+			SafeBlockHash:      e.safeHead.Hash,      //这里出问题了吧，此时没有
+			FinalizedBlockHash: e.finalizedHead.Hash, //还有这里，此时也没有
+		}
+
+		fcRes, err := e.engine.ForkchoiceUpdate(ctx, &fcs, nil)
+		if fcRes.PayloadStatus.Status == eth.ExecutionValid {
+			log.Info("zxl delete response success")
+			e.needFCUCall = false
+			return nil
+		}
+	}
+
 	if !e.checkNewPayloadStatus(status.Status) { //此时返回syncing,判断为true
+		//forcekill后进入这里
 		payload := envelope.ExecutionPayload
 		return NewTemporaryError(fmt.Errorf("cannot process unsafe payload: new - %v; parent: %v; err: %w",
 			payload.ID(), payload.ParentID(), eth.NewPayloadErr(payload, status)))
+
 	}
 
 	// Mark the new payload as valid
@@ -374,12 +408,15 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		FinalizedBlockHash: e.finalizedHead.Hash,                //还有这里，此时也没有
 	}
 	//ZXL: 能否借鉴在此处更新？
-	if e.syncStatus == syncStatusFinishedELButNotFinalized {
-		fc.SafeBlockHash = envelope.ExecutionPayload.BlockHash
-		fc.FinalizedBlockHash = envelope.ExecutionPayload.BlockHash
-		e.SetSafeHead(ref)
-		e.SetFinalizedHead(ref)
-	}
+	/*
+		if e.syncStatus == syncStatusFinishedELButNotFinalized {
+			fc.SafeBlockHash = envelope.ExecutionPayload.BlockHash
+			fc.FinalizedBlockHash = envelope.ExecutionPayload.BlockHash
+			e.SetSafeHead(ref)
+			e.SetFinalizedHead(ref)
+		}
+
+	*/
 
 	//此处更新
 	if status.Status == eth.ExecutionUnconsistent {
@@ -497,4 +534,39 @@ func (e *EngineController) TryBackupUnsafeReorg(ctx context.Context) (bool, erro
 // ResetBuildingState implements LocalEngineControl.
 func (e *EngineController) ResetBuildingState() {
 	e.resetBuildingState()
+}
+
+// currentHeads returns the current finalized, safe and unsafe heads of the execution engine.
+// If nothing has been marked finalized yet, the finalized head defaults to the genesis block.
+// If nothing has been marked safe yet, the safe head defaults to the finalized block.
+func (e *EngineController) getCurrentL2Info(ctx context.Context) (*sync.FindHeadsResult, error) {
+	finalized, err := e.engine.L2BlockRefByLabel(ctx, eth.Finalized)
+	log.Info("ZXL2: finalized", "finalized num from geth", finalized.Number)
+	if err != nil {
+		log.Error("2 err get finalized", "err", err)
+	}
+	if errors.Is(err, ethereum.NotFound) {
+		// default to genesis if we have not finalized anything before.
+		log.Error("not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find the finalized L2 block: %w", err)
+	}
+
+	safe, err := e.engine.L2BlockRefByLabel(ctx, eth.Safe)
+	if errors.Is(err, ethereum.NotFound) {
+		safe = finalized
+	} else if err != nil {
+		return nil, fmt.Errorf("2 failed to find the safe L2 block: %w", err)
+	}
+
+	unsafe, err := e.engine.L2BlockRefByLabel(ctx, eth.Unsafe)
+	if err != nil {
+		return nil, fmt.Errorf("2 failed to find the L2 head block: %w", err)
+	}
+	return &sync.FindHeadsResult{
+		Unsafe:    unsafe,
+		Safe:      safe,
+		Finalized: finalized,
+	}, nil
 }
