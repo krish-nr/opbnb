@@ -34,6 +34,8 @@ type SyncStatus = eth.SyncStatus
 const sealingDuration = time.Millisecond * 1
 
 type Driver struct {
+	firstSelect bool
+
 	l1State L1StateIface
 
 	// The derivation pipeline is reset whenever we reorg.
@@ -376,142 +378,178 @@ func (s *Driver) eventLoop() {
 			}
 		}
 
-		select {
-		case <-sequencerCh:
-			if err := sequencerStep(); err != nil {
-				return
+		log.Info("zxl firstselect?", "first select", s.firstSelect)
+		if s.firstSelect {
+			// Handle the first select case
+			log.Info("step into firstSelect logic")
+			select {
+			case envelope := <-s.unsafeL2Payloads:
+				log.Info("zxl step into unsafeL2Payloads")
+				s.snapshot("New unsafe payload")
+				// If we are doing CL sync or done with engine syncing, fallback to the unsafe payload queue & CL P2P sync.
+				if s.syncCfg.SyncMode == sync.CLSync || !s.engineController.IsEngineSyncing() {
+					s.log.Info("Optimistically queueing unsafe L2 execution payload", "id", envelope.ExecutionPayload.ID())
+					s.derivation.AddUnsafePayload(envelope)
+					s.metrics.RecordReceivedUnsafePayload(envelope)
+					reqStep()
+				} else if s.syncCfg.SyncMode == sync.ELSync {
+					log.Info("step into el sync logic")
+					ref, err := derive.PayloadToBlockRef(s.config, envelope.ExecutionPayload)
+					if err != nil {
+						s.log.Info("Failed to turn execution payload into a block ref", "id", envelope.ExecutionPayload.ID(), "err", err)
+						continue
+					}
+					if ref.Number <= s.engineController.UnsafeL2Head().Number {
+						continue
+					}
+					s.log.Info("Optimistically inserting unsafe L2 execution payload to drive EL sync", "id", envelope.ExecutionPayload.ID())
+					if err := s.engineController.InsertUnsafePayload(s.driverCtx, envelope, ref); err != nil {
+						s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
+					}
+					s.logSyncProgress("unsafe payload from sequencer while in EL sync")
+				}
+
+				s.firstSelect = false // Reset the flag after the first select
 			}
-		case <-altSyncTicker.C:
-			// Check if there is a gap in the current unsafe payload queue.
-			ctx, cancel := context.WithTimeout(s.driverCtx, time.Second*2)
-			err := s.checkForGapInUnsafeQueue(ctx)
-			cancel()
-			if err != nil {
-				s.log.Warn("failed to check for unsafe L2 blocks to sync", "err", err)
-			}
-		case envelope := <-s.unsafeL2Payloads:
-			log.Info("zxl step into unsafeL2Payloads")
-			s.snapshot("New unsafe payload")
-			// If we are doing CL sync or done with engine syncing, fallback to the unsafe payload queue & CL P2P sync.
-			if s.syncCfg.SyncMode == sync.CLSync || !s.engineController.IsEngineSyncing() {
-				s.log.Info("Optimistically queueing unsafe L2 execution payload", "id", envelope.ExecutionPayload.ID())
-				s.derivation.AddUnsafePayload(envelope)
-				s.metrics.RecordReceivedUnsafePayload(envelope)
-				reqStep()
-			} else if s.syncCfg.SyncMode == sync.ELSync {
-				ref, err := derive.PayloadToBlockRef(s.config, envelope.ExecutionPayload)
+		} else {
+
+			select {
+			case <-sequencerCh:
+				if err := sequencerStep(); err != nil {
+					return
+				}
+			case <-altSyncTicker.C:
+				// Check if there is a gap in the current unsafe payload queue.
+				ctx, cancel := context.WithTimeout(s.driverCtx, time.Second*2)
+				err := s.checkForGapInUnsafeQueue(ctx)
+				cancel()
 				if err != nil {
-					s.log.Info("Failed to turn execution payload into a block ref", "id", envelope.ExecutionPayload.ID(), "err", err)
+					s.log.Warn("failed to check for unsafe L2 blocks to sync", "err", err)
+				}
+			case envelope := <-s.unsafeL2Payloads:
+				log.Info("zxl step into unsafeL2Payloads")
+				s.snapshot("New unsafe payload")
+				// If we are doing CL sync or done with engine syncing, fallback to the unsafe payload queue & CL P2P sync.
+				if s.syncCfg.SyncMode == sync.CLSync || !s.engineController.IsEngineSyncing() {
+					s.log.Info("Optimistically queueing unsafe L2 execution payload", "id", envelope.ExecutionPayload.ID())
+					s.derivation.AddUnsafePayload(envelope)
+					s.metrics.RecordReceivedUnsafePayload(envelope)
+					reqStep()
+				} else if s.syncCfg.SyncMode == sync.ELSync {
+					ref, err := derive.PayloadToBlockRef(s.config, envelope.ExecutionPayload)
+					if err != nil {
+						s.log.Info("Failed to turn execution payload into a block ref", "id", envelope.ExecutionPayload.ID(), "err", err)
+						continue
+					}
+					if ref.Number <= s.engineController.UnsafeL2Head().Number {
+						continue
+					}
+					s.log.Info("Optimistically inserting unsafe L2 execution payload to drive EL sync", "id", envelope.ExecutionPayload.ID())
+					if err := s.engineController.InsertUnsafePayload(s.driverCtx, envelope, ref); err != nil {
+						s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
+					}
+					s.logSyncProgress("unsafe payload from sequencer while in EL sync")
+				}
+			case newL1Head := <-s.l1HeadSig:
+				s.l1State.HandleNewL1HeadBlock(newL1Head)
+				reqStep() // a new L1 head may mean we have the data to not get an EOF again.
+			case newL1Safe := <-s.l1SafeSig:
+				s.l1State.HandleNewL1SafeBlock(newL1Safe)
+				// no step, justified L1 information does not do anything for L2 derivation or status
+			case newL1Finalized := <-s.l1FinalizedSig:
+				s.l1State.HandleNewL1FinalizedBlock(newL1Finalized)
+				s.derivation.Finalize(newL1Finalized)
+				reqStep() // we may be able to mark more L2 data as finalized now
+			case <-delayedStepReq:
+				delayedStepReq = nil
+				step()
+			case <-stepReqCh:
+				// Don't start the derivation pipeline until we are done with EL sync
+				if s.engineController.IsEngineSyncing() {
 					continue
 				}
-				if ref.Number <= s.engineController.UnsafeL2Head().Number {
+				s.metrics.SetDerivationIdle(false)
+				s.log.Debug("Derivation process step", "onto_origin", s.derivation.Origin(), "attempts", stepAttempts)
+				err := s.derivation.Step(s.driverCtx)
+				stepAttempts += 1 // count as attempt by default. We reset to 0 if we are making healthy progress.
+				if err == io.EOF {
+					s.log.Debug("Derivation process went idle", "progress", s.derivation.Origin(), "err", err)
+					stepAttempts = 0
+					s.metrics.SetDerivationIdle(true)
 					continue
+				} else if err != nil && errors.Is(err, derive.EngineELSyncing) {
+					s.log.Debug("Derivation process went idle because the engine is syncing", "progress", s.derivation.Origin(), "unsafe_head", s.engineController.UnsafeL2Head(), "err", err)
+					stepAttempts = 0
+					s.metrics.SetDerivationIdle(true)
+					continue
+				} else if err != nil && errors.Is(err, derive.ErrReset) {
+					// If the pipeline corrupts, e.g. due to a reorg, simply reset it
+					s.log.Warn("Derivation pipeline is reset", "err", err)
+					s.derivation.Reset()
+					s.metrics.RecordPipelineReset()
+					continue
+				} else if err != nil && errors.Is(err, derive.ErrTemporary) {
+					s.log.Warn("Derivation process temporary error", "attempts", stepAttempts, "err", err)
+					reqStep()
+					continue
+				} else if err != nil && errors.Is(err, derive.ErrCritical) {
+					s.log.Error("Derivation process critical error", "err", err)
+					return
+				} else if err != nil && errors.Is(err, derive.NotEnoughData) {
+					stepAttempts = 0 // don't do a backoff for this error
+					reqStep()
+					continue
+				} else if err != nil {
+					s.log.Error("Derivation process error", "attempts", stepAttempts, "err", err)
+					reqStep()
+					continue
+				} else {
+					stepAttempts = 0
+					reqStep() // continue with the next step if we can
 				}
-				s.log.Info("Optimistically inserting unsafe L2 execution payload to drive EL sync", "id", envelope.ExecutionPayload.ID())
-				if err := s.engineController.InsertUnsafePayload(s.driverCtx, envelope, ref); err != nil {
-					s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
-				}
-				s.logSyncProgress("unsafe payload from sequencer while in EL sync")
-			}
-		case newL1Head := <-s.l1HeadSig:
-			s.l1State.HandleNewL1HeadBlock(newL1Head)
-			reqStep() // a new L1 head may mean we have the data to not get an EOF again.
-		case newL1Safe := <-s.l1SafeSig:
-			s.l1State.HandleNewL1SafeBlock(newL1Safe)
-			// no step, justified L1 information does not do anything for L2 derivation or status
-		case newL1Finalized := <-s.l1FinalizedSig:
-			s.l1State.HandleNewL1FinalizedBlock(newL1Finalized)
-			s.derivation.Finalize(newL1Finalized)
-			reqStep() // we may be able to mark more L2 data as finalized now
-		case <-delayedStepReq:
-			delayedStepReq = nil
-			step()
-		case <-stepReqCh:
-			// Don't start the derivation pipeline until we are done with EL sync
-			if s.engineController.IsEngineSyncing() {
-				continue
-			}
-			s.metrics.SetDerivationIdle(false)
-			s.log.Debug("Derivation process step", "onto_origin", s.derivation.Origin(), "attempts", stepAttempts)
-			err := s.derivation.Step(s.driverCtx)
-			stepAttempts += 1 // count as attempt by default. We reset to 0 if we are making healthy progress.
-			if err == io.EOF {
-				s.log.Debug("Derivation process went idle", "progress", s.derivation.Origin(), "err", err)
-				stepAttempts = 0
-				s.metrics.SetDerivationIdle(true)
-				continue
-			} else if err != nil && errors.Is(err, derive.EngineELSyncing) {
-				s.log.Debug("Derivation process went idle because the engine is syncing", "progress", s.derivation.Origin(), "unsafe_head", s.engineController.UnsafeL2Head(), "err", err)
-				stepAttempts = 0
-				s.metrics.SetDerivationIdle(true)
-				continue
-			} else if err != nil && errors.Is(err, derive.ErrReset) {
-				// If the pipeline corrupts, e.g. due to a reorg, simply reset it
-				s.log.Warn("Derivation pipeline is reset", "err", err)
+			case respCh := <-s.stateReq:
+				respCh <- struct{}{}
+			case respCh := <-s.forceReset:
+				s.log.Warn("Derivation pipeline is manually reset")
 				s.derivation.Reset()
 				s.metrics.RecordPipelineReset()
-				continue
-			} else if err != nil && errors.Is(err, derive.ErrTemporary) {
-				s.log.Warn("Derivation process temporary error", "attempts", stepAttempts, "err", err)
-				reqStep()
-				continue
-			} else if err != nil && errors.Is(err, derive.ErrCritical) {
-				s.log.Error("Derivation process critical error", "err", err)
+				close(respCh)
+			case resp := <-s.startSequencer:
+				unsafeHead := s.engineController.UnsafeL2Head().Hash
+				if !s.driverConfig.SequencerStopped {
+					resp.err <- ErrSequencerAlreadyStarted
+				} else if !bytes.Equal(unsafeHead[:], resp.hash[:]) {
+					resp.err <- fmt.Errorf("block hash does not match: head %s, received %s", unsafeHead.String(), resp.hash.String())
+				} else {
+					if err := s.sequencerNotifs.SequencerStarted(); err != nil {
+						resp.err <- fmt.Errorf("sequencer start notification: %w", err)
+						continue
+					}
+					s.log.Info("Sequencer has been started")
+					s.driverConfig.SequencerStopped = false
+					close(resp.err)
+					planSequencerAction() // resume sequencing
+				}
+			case respCh := <-s.stopSequencer:
+				if s.driverConfig.SequencerStopped {
+					respCh <- hashAndError{err: ErrSequencerAlreadyStopped}
+				} else {
+					if err := s.sequencerNotifs.SequencerStopped(); err != nil {
+						respCh <- hashAndError{err: fmt.Errorf("sequencer start notification: %w", err)}
+						continue
+					}
+					s.log.Warn("Sequencer has been stopped")
+					s.driverConfig.SequencerStopped = true
+					// Cancel any inflight block building. If we don't cancel this, we can resume sequencing an old block
+					// even if we've received new unsafe heads in the interim, causing us to introduce a re-org.
+					s.sequencer.CancelBuildingBlock(s.driverCtx)
+					respCh <- hashAndError{hash: s.engineController.UnsafeL2Head().Hash}
+				}
+			case respCh := <-s.sequencerActive:
+				respCh <- !s.driverConfig.SequencerStopped
+			case <-s.driverCtx.Done():
 				return
-			} else if err != nil && errors.Is(err, derive.NotEnoughData) {
-				stepAttempts = 0 // don't do a backoff for this error
-				reqStep()
-				continue
-			} else if err != nil {
-				s.log.Error("Derivation process error", "attempts", stepAttempts, "err", err)
-				reqStep()
-				continue
-			} else {
-				stepAttempts = 0
-				reqStep() // continue with the next step if we can
 			}
-		case respCh := <-s.stateReq:
-			respCh <- struct{}{}
-		case respCh := <-s.forceReset:
-			s.log.Warn("Derivation pipeline is manually reset")
-			s.derivation.Reset()
-			s.metrics.RecordPipelineReset()
-			close(respCh)
-		case resp := <-s.startSequencer:
-			unsafeHead := s.engineController.UnsafeL2Head().Hash
-			if !s.driverConfig.SequencerStopped {
-				resp.err <- ErrSequencerAlreadyStarted
-			} else if !bytes.Equal(unsafeHead[:], resp.hash[:]) {
-				resp.err <- fmt.Errorf("block hash does not match: head %s, received %s", unsafeHead.String(), resp.hash.String())
-			} else {
-				if err := s.sequencerNotifs.SequencerStarted(); err != nil {
-					resp.err <- fmt.Errorf("sequencer start notification: %w", err)
-					continue
-				}
-				s.log.Info("Sequencer has been started")
-				s.driverConfig.SequencerStopped = false
-				close(resp.err)
-				planSequencerAction() // resume sequencing
-			}
-		case respCh := <-s.stopSequencer:
-			if s.driverConfig.SequencerStopped {
-				respCh <- hashAndError{err: ErrSequencerAlreadyStopped}
-			} else {
-				if err := s.sequencerNotifs.SequencerStopped(); err != nil {
-					respCh <- hashAndError{err: fmt.Errorf("sequencer start notification: %w", err)}
-					continue
-				}
-				s.log.Warn("Sequencer has been stopped")
-				s.driverConfig.SequencerStopped = true
-				// Cancel any inflight block building. If we don't cancel this, we can resume sequencing an old block
-				// even if we've received new unsafe heads in the interim, causing us to introduce a re-org.
-				s.sequencer.CancelBuildingBlock(s.driverCtx)
-				respCh <- hashAndError{hash: s.engineController.UnsafeL2Head().Hash}
-			}
-		case respCh := <-s.sequencerActive:
-			respCh <- !s.driverConfig.SequencerStopped
-		case <-s.driverCtx.Done():
-			return
 		}
 	}
 }

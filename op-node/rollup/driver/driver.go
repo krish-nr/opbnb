@@ -172,5 +172,6 @@ func NewDriver(
 		altSync:            altSync,
 		asyncGossiper:      asyncGossiper,
 		sequencerConductor: sequencerConductor,
+		firstSelect:        true,
 	}
 }
