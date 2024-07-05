@@ -304,7 +304,7 @@ func (e *EngineController) checkUpdateUnsafeHead(status eth.ExecutePayloadStatus
 		return true
 	}
 	log.Info("zxl 3")
-	return true
+	return status == eth.ExecutionValid
 }
 
 // TryUpdateEngine attempts to update the engine with the current forkchoice state of the rollup node,
