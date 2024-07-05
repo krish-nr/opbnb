@@ -297,10 +297,13 @@ func (e *EngineController) checkForkchoiceUpdatedStatus(status eth.ExecutePayloa
 func (e *EngineController) checkUpdateUnsafeHead(status eth.ExecutePayloadStatus) bool {
 	if e.syncMode == sync.ELSync {
 		if e.syncStatus == syncStatusStartedEL || e.syncStatus == syncStatusWillStartEL {
+			log.Info("zxl 1")
 			return false
 		}
+		log.Info("zxl 2")
 		return true
 	}
+	log.Info("zxl 3")
 	return true
 }
 
