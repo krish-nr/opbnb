@@ -293,6 +293,17 @@ func (e *EngineController) checkForkchoiceUpdatedStatus(status eth.ExecutePayloa
 	return status == eth.ExecutionValid
 }
 
+// checkUpdateUnsafeHead checks if we can update current unsafeHead for op-node
+func (e *EngineController) checkUpdateUnsafeHead(status eth.ExecutePayloadStatus) bool {
+	if e.syncMode == sync.ELSync {
+		if e.syncStatus == syncStatusStartedEL || e.syncStatus == syncStatusWillStartEL {
+			return false
+		}
+		return true
+	}
+	return true
+}
+
 // TryUpdateEngine attempts to update the engine with the current forkchoice state of the rollup node,
 // this is a no-op if the nodes already agree on the forkchoice state.
 func (e *EngineController) TryUpdateEngine(ctx context.Context) error {
@@ -395,12 +406,16 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		return NewTemporaryError(fmt.Errorf("cannot prepare unsafe chain for new payload: new - %v; parent: %v; err: %w",
 			payload.ID(), payload.ParentID(), eth.ForkchoiceUpdateErr(fcRes.PayloadStatus)))
 	}
-	e.SetUnsafeHead(ref)
 	e.needFCUCall = false
+
+	if e.checkUpdateUnsafeHead(fcRes.PayloadStatus.Status) {
+		e.SetUnsafeHead(ref)
+	}
 
 	if e.syncStatus == syncStatusFinishedELButNotFinalized {
 		e.log.Info("Finished EL sync", "sync_duration", e.clock.Since(e.elStart), "finalized_block", ref.ID().String())
 		e.syncStatus = syncStatusFinishedEL
+		e.SetUnsafeHead(ref)
 	}
 
 	return nil
