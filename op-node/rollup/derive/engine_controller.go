@@ -331,7 +331,15 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		b, err := e.engine.L2BlockRefByLabel(ctx, eth.Finalized)
 		isTransitionBlock := e.rollupCfg.Genesis.L2.Number != 0 && b.Hash == e.rollupCfg.Genesis.L2.Hash
 		log.Debug("zxl debuginfo", "current unsafe", e.UnsafeL2Head().Number, "ref num", ref.Number)
-		isGapSyncNeeded := ref.Number-e.UnsafeL2Head().Number > uint64(e.elTriggerGap)
+		currentUnsafe := e.UnsafeL2Head()
+		if currentUnsafe.Number == 0 {
+			log.Info("get unsafe 0")
+			currentUnsafe, _ = e.engine.L2BlockRefByLabel(ctx, eth.Unsafe)
+			log.Info("get unsafe from geth", "unsafe", currentUnsafe.Number)
+
+		}
+		isGapSyncNeeded := ref.Number-currentUnsafe.Number > uint64(e.elTriggerGap)
+		log.Info("gap status", "trigger gap", uint64(e.elTriggerGap), "ref", ref.Number, "currentUnsafe", currentUnsafe.Number, "ifNeeded", isGapSyncNeeded)
 		if errors.Is(err, ethereum.NotFound) || isTransitionBlock || isGapSyncNeeded {
 			e.syncStatus = syncStatusStartedEL
 			e.log.Info("Starting EL sync")
