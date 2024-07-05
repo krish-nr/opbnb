@@ -83,14 +83,14 @@ func (s *EngineAPIClient) EngineVersionProvider() EngineVersionProvider { return
 func (s *EngineAPIClient) ForkchoiceUpdate(ctx context.Context, fc *eth.ForkchoiceState, attributes *eth.PayloadAttributes) (*eth.ForkchoiceUpdatedResult, error) {
 	llog := s.log.New("state", fc)       // local logger
 	tlog := llog.New("attr", attributes) // trace logger
-	tlog.Trace("Sharing forkchoice-updated signal")
+	tlog.Info("Sharing forkchoice-updated signal")
 	fcCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 	var result eth.ForkchoiceUpdatedResult
 	method := s.evp.ForkchoiceUpdatedVersion(attributes)
 	err := s.RPC.CallContext(fcCtx, &result, string(method), fc, attributes)
 	if err == nil {
-		tlog.Trace("Shared forkchoice-updated signal")
+		tlog.Info("Shared forkchoice-updated signal")
 		if attributes != nil { // block building is optional, we only get a payload ID if we are building a block
 			tlog.Trace("Received payload id", "payloadId", result.PayloadID)
 		}

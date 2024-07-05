@@ -338,7 +338,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 			log.Info("get unsafe from geth", "unsafe", currentUnsafe.Number)
 
 		}
-		isGapSyncNeeded := ref.Number-currentUnsafe.Number > uint64(e.elTriggerGap)
+		isGapSyncNeeded := ref.Number-e.UnsafeL2Head().Number > uint64(e.elTriggerGap)
 		log.Info("gap status", "trigger gap", uint64(e.elTriggerGap), "ref", ref.Number, "currentUnsafe", currentUnsafe.Number, "ifNeeded", isGapSyncNeeded)
 		if errors.Is(err, ethereum.NotFound) || isTransitionBlock || isGapSyncNeeded {
 			e.syncStatus = syncStatusStartedEL
@@ -376,6 +376,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		e.SetFinalizedHead(ref)
 	}
 	fcRes, err := e.engine.ForkchoiceUpdate(ctx, &fc, nil)
+	log.Info("fc status", "status", fcRes.PayloadStatus.Status, "err", err)
 	if err != nil {
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
