@@ -80,6 +80,7 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		Rollup: *rollupConfig,
 		Driver: *driverConfig,
 		Beacon: NewBeaconEndpointConfig(ctx),
+		L1Blob: NewL1BlobEndpointConfig(ctx),
 		RPC: node.RPCConfig{
 			ListenAddr:  ctx.String(flags.RPCListenAddr.Name),
 			ListenPort:  ctx.Int(flags.RPCListenPort.Name),
@@ -135,6 +136,18 @@ func NewBeaconEndpointConfig(ctx *cli.Context) node.L1BeaconEndpointSetup {
 		BeaconArchiverAddr:     ctx.String(flags.BeaconArchiverAddr.Name),
 		BeaconCheckIgnore:      ctx.Bool(flags.BeaconCheckIgnore.Name),
 		BeaconFetchAllSidecars: ctx.Bool(flags.BeaconFetchAllSidecars.Name),
+	}
+}
+
+func NewL1BlobEndpointConfig(ctx *cli.Context) node.L1BlobEndpointSetup {
+	nodeAddrs := ctx.String(flags.L1NodeAddr.Name)
+	if ctx.IsSet(flags.L1ArchiveBlobRpcAddr.Name) {
+		nodeAddrs = nodeAddrs + "," + ctx.String(flags.L1ArchiveBlobRpcAddr.Name)
+	}
+	return &node.L1BlobEndpointConfig{
+		NodeAddrs: nodeAddrs,
+		RateLimit: ctx.Float64(flags.L1BlobRpcRateLimit.Name),
+		BatchSize: ctx.Int(flags.L1BlobRpcMaxBatchSize.Name),
 	}
 }
 
