@@ -384,7 +384,7 @@ func (s *Driver) eventLoop() {
 			log.Info("step into firstSelect logic")
 			select {
 			case envelope := <-s.unsafeL2Payloads:
-				log.Info("zxl step into unsafeL2Payloads")
+				log.Info("zxl step into unsafeL2Payloads!")
 				s.snapshot("New unsafe payload")
 				// If we are doing CL sync or done with engine syncing, fallback to the unsafe payload queue & CL P2P sync.
 				if s.syncCfg.SyncMode == sync.CLSync || !s.engineController.IsEngineSyncing() {
