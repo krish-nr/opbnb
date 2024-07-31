@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"strings"
 )
 
 type syncStatusEnum int
@@ -279,6 +280,10 @@ func (e *EngineController) checkNewPayloadStatus(status eth.ExecutePayloadStatus
 		}
 		// Allow SYNCING and ACCEPTED if engine EL sync is enabled
 		return status == eth.ExecutionValid || status == eth.ExecutionSyncing || status == eth.ExecutionAccepted
+	} else if e.syncMode == sync.CLSync {
+		if status == eth.ExecutionInconsistent {
+			return true
+		}
 	}
 	return status == eth.ExecutionValid
 }
@@ -294,6 +299,11 @@ func (e *EngineController) checkForkchoiceUpdatedStatus(status eth.ExecutePayloa
 		return status == eth.ExecutionValid || status == eth.ExecutionSyncing
 	}
 	return status == eth.ExecutionValid
+}
+
+// checkELSyncTriggered checks returned err of engine_newPayloadV1
+func (e *EngineController) checkELSyncTriggered(status eth.ExecutePayloadStatus, err error) bool {
+	return e.syncMode != sync.ELSync && status == eth.ExecutionSyncing && strings.Contains(err.Error(), "forced head needed for startup")
 }
 
 // checkUpdateUnsafeHead checks if we can update current unsafeHead for op-node
@@ -360,12 +370,12 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 	}
 	// Insert the payload & then call FCU
 	status, err := e.engine.NewPayload(ctx, envelope.ExecutionPayload, envelope.ParentBeaconBlockRoot)
-	if err != nil {
+	if err != nil && !e.checkELSyncTriggered(status.Status, err) {
 		return NewTemporaryError(fmt.Errorf("failed to update insert payload: %w", err))
 	}
 
 	//process inconsistent state
-	if status.Status == eth.ExecutionInconsistent {
+	if status.Status == eth.ExecutionInconsistent || e.checkELSyncTriggered(status.Status, err) {
 		currentL2Info, err := e.getCurrentL2Info(ctx)
 		if err != nil {
 			return NewTemporaryError(fmt.Errorf("failed to process inconsistent state: %w", err))

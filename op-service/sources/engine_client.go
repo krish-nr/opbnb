@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources/caching"
+	"strings"
 )
 
 type EngineClientConfig struct {
@@ -136,6 +137,9 @@ func (s *EngineAPIClient) NewPayload(ctx context.Context, payload *eth.Execution
 
 	e.Trace("Received payload execution result", "status", result.Status, "latestValidHash", result.LatestValidHash, "message", result.ValidationError)
 	if err != nil {
+		if strings.Contains(err.Error(), "forced head needed for startup") {
+			return &result, err
+		}
 		e.Error("Payload execution failed", "err", err)
 		return nil, fmt.Errorf("failed to execute payload: %w", err)
 	}
