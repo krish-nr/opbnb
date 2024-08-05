@@ -307,7 +307,12 @@ func (e *EngineController) checkForkchoiceUpdatedStatus(status eth.ExecutePayloa
 
 // checkELSyncTriggered checks returned err of engine_newPayloadV1
 func (e *EngineController) checkELSyncTriggered(status eth.ExecutePayloadStatus, err error) bool {
-	return e.syncMode != sync.ELSync && status == eth.ExecutionSyncing && strings.Contains(err.Error(), "forced head needed for startup")
+	if err == nil {
+		return false
+	} else if strings.Contains(err.Error(), "forced head needed for startup") {
+		return e.syncMode != sync.ELSync && status == eth.ExecutionSyncing
+	}
+	return false
 }
 
 // checkUpdateUnsafeHead checks if we can update current unsafeHead for op-node
