@@ -299,6 +299,7 @@ func (eq *EngineQueue) Step(ctx context.Context) error {
 	// If we don't need to call FCU, keep going b/c this was a no-op. If we needed to
 	// perform a network call, then we should yield even if we did not encounter an error.
 	if err := eq.ec.TryUpdateEngine(ctx); !errors.Is(err, errNoFCUNeeded) {
+		log.Error("forkchoice update error here", "err", err)
 		return err
 	}
 	// Trying unsafe payload should be done before safe attributes
