@@ -495,14 +495,12 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 			payload.ID(), payload.ParentID(), eth.ForkchoiceUpdateErr(fcRes.PayloadStatus)))
 	}
 
-	/*
-		if status.Status == eth.ExecutionInconsistent {
-			return nil
-		}
-
-	*/
-
 	e.needFCUCall = false
+
+	if status.Status == eth.ExecutionInconsistent {
+		return nil
+	}
+
 	if e.checkUpdateUnsafeHead(fcRes.PayloadStatus.Status) {
 		log.Info("step into here for unsafe update", "newpayload status", status.Status)
 		e.SetUnsafeHead(ref)
