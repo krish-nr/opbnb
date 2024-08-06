@@ -344,6 +344,7 @@ func (e *EngineController) TryUpdateEngine(ctx context.Context) error {
 		SafeBlockHash:      e.safeHead.Hash,
 		FinalizedBlockHash: e.finalizedHead.Hash,
 	}
+	log.Info("tryupdate engine fcu request", "HeadBlock", e.unsafeHead.Number)
 	_, err := e.engine.ForkchoiceUpdate(ctx, &fc, nil)
 	if err != nil {
 		var inputErr eth.InputError
@@ -404,7 +405,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 				e.SetSafeHead(currentL2Info.Unsafe)
 			}
 			if currentL2Info.Finalized.Number > currentL2Info.Unsafe.Number {
-				log.Info("current finalized is higher than unsafe block, reset it", "set Finalized after", currentL2Info.Unsafe.Number, "set Finalized before", e.safeHead.Number)
+				log.Info("current finalized is higher than unsafe block, reset it", "set Finalized after", currentL2Info.Unsafe.Number, "set Finalized before", e.finalizedHead.Number)
 				e.SetFinalizedHead(currentL2Info.Unsafe)
 			}
 		}
@@ -495,6 +496,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 
 	e.needFCUCall = false
 	if e.checkUpdateUnsafeHead(fcRes.PayloadStatus.Status) {
+		log.Info("step into here for unsafe update", "newpayload status", status.Status)
 		e.SetUnsafeHead(ref)
 	}
 
