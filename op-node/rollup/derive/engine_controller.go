@@ -500,10 +500,13 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 		}
 
 		needSyncWithEngine = false
+		e.syncStatus = syncStatusStartedEL
 	}
 	// Ensure that the variables are used even if needSyncWithEngine is false
 	_ = needResetSafeHead
 	_ = needResetFinalizedHead
+
+	log.Info("sync status 1", "status", e.syncStatus)
 
 	if e.syncStatus == syncStatusFinishedELButNotFinalized {
 		fc.SafeBlockHash = envelope.ExecutionPayload.BlockHash
@@ -527,6 +530,7 @@ func (e *EngineController) InsertUnsafePayload(ctx context.Context, envelope *et
 			return NewTemporaryError(fmt.Errorf("failed to update forkchoice to prepare for new unsafe payload: %w", err))
 		}
 	}
+	log.Info("sync status 2", "status", fcRes.PayloadStatus.Status)
 	if !e.checkForkchoiceUpdatedStatus(fcRes.PayloadStatus.Status) {
 		payload := envelope.ExecutionPayload
 		return NewTemporaryError(fmt.Errorf("cannot prepare unsafe chain for new payload: new - %v; parent: %v; err: %w",
