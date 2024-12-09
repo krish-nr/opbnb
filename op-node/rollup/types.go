@@ -246,6 +246,7 @@ type L2Client interface {
 // CheckL2ChainID checks that the configured L2 chain ID matches the client's chain ID.
 func (cfg *Config) CheckL2ChainID(ctx context.Context, client L2Client) error {
 	id, err := client.ChainID(ctx)
+	log.Info("ZXL log", "chainID", id.Uint64())
 	if err != nil {
 		return fmt.Errorf("failed to get L2 chain ID: %w", err)
 	}
