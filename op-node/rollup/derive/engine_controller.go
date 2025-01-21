@@ -38,7 +38,7 @@ var (
 	ErrNoFCUNeeded             = errors.New("no FCU call was needed")
 	ErrELSyncTriggerUnexpected = errors.New("forced head needed for startup")
 
-	maxFCURetryAttempts = 5
+	maxFCURetryAttempts = 30
 	fcuRetryDelay       = 5 * time.Second
 	needSyncWithEngine  = false
 )
